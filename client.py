@@ -20,7 +20,11 @@ def specify_receiver():
 
 def send_message():
     dest = specify_receiver()
-    sock_cli.send(bytes("{}|{}".format(dest, msg), settings.ENCODING))
+    message = input("Masukkan pesan : ")
+    message = bytes(message, settings.ENCODING)
+
+    sock_cli.send(bytes("|".join(['message', dest, len(message)]), settings.ENCODING))
+    sock_cli.send(message)
 
 def get_file_name():
     while True:
@@ -42,6 +46,9 @@ def send_file():
     sock_cli.sendall(data)
     file_handler.close()
 
+def add_friend():
+    pass
+
 def get_message_header(sock_cli):
     message_header = ""
     while len(re.findall('\n', message_header)) < 4:
@@ -58,22 +65,31 @@ def recv_file(sock_cli, header_datas):
     received_size = 0
     file_name = header_datas[2]
     file_size = int(header_datas[3])
-    username = header_datas[4]
+    sender_name = header_datas[4]
 
-    print("Receiving file from {}".format(username))
+    print("\nReceiving file from {}".format(sender_name))
 
     with open(settings.FILE_ROUTE_RECEIVE + file_name, "wb") as file:
         while received_size < file_size:
-        # while True:
-            # data = sock_cli.recv(settings.BATCH_SIZE)
             data = sock_cli.recv(settings.BATCH_SIZE)
             received_size += len(data)
 
-            # if not data:
-            #     break
-
-
             file.write(data)
+
+def recv_message(sock_cli, header_datas):
+    received_size = 0
+    msg_size = int(header_datas[2])
+    sender_name = header_datas[3]
+    message = ""
+
+    print("\nReceiving message from {}".format(sender_name))
+
+    while received_size < file_size:
+        data = sock_cli.recv(settings.BATCH_SIZE)
+        received_size += len(data)
+        message += data.decode(settings.ENCODING)
+
+    print(message)
 
 def read_msg(sock_cli):
     while True:
@@ -87,8 +103,10 @@ def read_msg(sock_cli):
         if header_datas[0] == "friend-list":
             pass
         elif header_datas[0] == "message":
-            pass
+            # header "message|dest|msg_size|sender_username|\n\n\n\n"
+            recv_message(sock_cli, header_datas)
         elif header_datas[0] == "file":
+            # header "file|dest|file_name|file_size|sender_username|\n\n\n\n"
             recv_file(sock_cli, header_datas)
 
 sock_cli = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
@@ -103,15 +121,15 @@ sock_cli.send(bytes(sys.argv[1], settings.ENCODING))
 thread_cli = threading.Thread(target=read_msg, args=(sock_cli,))
 thread_cli.start()
 
-
 while True:
     #send/receive message
     print("""
     Command :
     1. Cek Friend List
-    2. Kirim Pesan
-    3. Kirim File
-    4. Exit
+    2. Tambah Friend
+    3. Kirim Pesan
+    4. Kirim File
+    5. Exit
     """)
 
     try:
@@ -123,10 +141,14 @@ while True:
     if cmd == 1:
         check_friend_list()
     elif cmd == 2:
-        send_message()
+        add_friend()
     elif cmd == 3:
-        send_file()
+        # header "message|dest|msg_size|\n\n\n\n"
+        send_message()
     elif cmd == 4:
+        # header "file|dest|file_name|file_size|\n\n\n\n"
+        send_file()
+    elif cmd == 5:
         sock_cli.close()
         break
     else:

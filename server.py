@@ -15,28 +15,47 @@ def get_message_header(sock_cli):
 
     return message_header
 
-def file_sharing(sock_cli, clients, sender_addr_cli, header_datas, username_cli):
+def receiving_and_sending_another_user(sock_cli, clients, sender_addr_cli, header_datas, username_cli, header, data_size):
     received_size = 0
-    file_size = int(header_datas[3])
 
     if header_datas[1] == "bcast":
-        send_broadcast(clients, bytes(
-            "|".join(header_datas[:4]) +
-            "|" + username_cli +
-            "|\n\n\n\n", settings.ENCODING),
-        sender_addr_cli)
+        send_broadcast(clients, header, sender_addr_cli)
+    else:
+        send_msg(clients[header_datas[1]]['sock_cli'], header)
 
-    # while True:
-    while received_size < file_size:
+    while received_size < data_size:
         data = sock_cli.recv(settings.BATCH_SIZE)
         received_size += len(data)
 
-        # if not data:
-            # break
-
         if header_datas[1] == "bcast":
-            send_broadcast(clients, data, sender_addr_cli)
+            send_broadcast(clients, data, sender_addr_cli, username_cli)
+        else :
+            send_msg(clients[header_datas[1]]['sock_cli'], data)
 
+def file_sharing(sock_cli, clients, sender_addr_cli, header_datas, username_cli):
+    data_size = int(header_datas[3])
+    header = bytes(
+            "|".join(header_datas[:4]) +
+            "|" + username_cli +
+            "|\n\n\n\n", settings.ENCODING)
+
+    receiving_and_sending(sock_cli, clients, sender_addr_cli, header_datas, username_cli, header, data_size)
+
+def message_sharing(sock_cli, clients, sender_addr_cli, header_datas, username_cli):
+    data_size = int(header_datas[2])
+    header = bytes(
+            "|".join(header_datas[:3]) +
+            "|" + username_cli +
+            "|\n\n\n\n", settings.ENCODING)
+
+    receiving_and_sending(sock_cli, clients, sender_addr_cli, header_datas, username_cli, header, data_size)
+
+
+def check_if_friend(clients, header_datas, username_cli):
+    if header_datas[1] not in clients[username_cli]['friend_list']:
+        return False
+    else:
+        return True
 
 def read_msg(clients, sock_cli, addr_cli, username_cli):
     while True:
@@ -48,23 +67,40 @@ def read_msg(clients, sock_cli, addr_cli, username_cli):
 
         header_datas = message_header.split("|")
 
+        if header_datas[1] != 'bcast' and check_if_friend(clients, header_datas, header_datas[1]):
+            message = bytes("User yang dimaksud tidak ditemukan")
+
+            send_msg(sock_cli, bytes(
+                "|".join([
+                    'message',
+                    username_cli,
+                    len(message),
+                    'server',
+                    "\n\n\n\n"
+                ]) +
+                , settings.ENCODING)
+            )
+            send_msg(sock_cli, message)
+
         if header_datas[0] == "friend-list":
             pass
-        elif header_datas[0] == "message":
+        if header_datas[0] == "add-friend":
             pass
+        elif header_datas[0] == "message":
+            message_sharing(sock_cli, clients, addr_cli, header_datas, username_cli)
         elif header_datas[0] == "file":
             file_sharing(sock_cli, clients, addr_cli, header_datas, username_cli)
         else:
             break
 
     sock_cli.close()
-    print("Connection closed", addr_cli)
+    print("Connection closed ", addr_cli)
 
 #send to all clients
-def send_broadcast(clients, data, sender_addr_cli):
-    for sock_cli, addr_cli, _ in clients.values():
-        if not (sender_addr_cli[0] == addr_cli[0] and sender_addr_cli[1] == addr_cli[1]):
-            send_msg(sock_cli, data)
+def send_broadcast(clients, data, sender_addr_cli, username_cli):
+    for friend in clients[username_cli]['friend_list']:
+        if not (sender_addr_cli[0] == clients[friend]['addr_cli'][0] and sender_addr_cli[1] == clients[friend]['addr_cli'][1]):
+            send_msg(clients[friend]['sock_cli'], data)
 
 def send_msg(sock_cli, data):
     sock_cli.send(data)
@@ -94,4 +130,9 @@ while True:
     thread_cli.start()
 
     #save clients info to dictionary
-    clients[username_cli] = (sock_cli, addr_cli, thread_cli)
+    clients[username_cli] = {
+        'sock_cli': sock_cli,
+        'addr_cli': addr_cli,
+        'thread_cli': thread_cli,
+        'friend_list': []
+    }
