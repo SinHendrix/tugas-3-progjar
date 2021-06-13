@@ -12,18 +12,26 @@ def file_exists(file_route):
         return False
     return True
 
-def check_friend_list():
-    pass
-
 def specify_receiver():
     return input("Masukkan username tujuan (ketikkan bcast untuk broadcast):")
 
-def send_message():
+def friend_list():
+    sock_cli.send(bytes("|".join(['friend-list', "\n\n\n\n"]), settings.ENCODING))
+
+def add_friend():
+    friend_name = input("Masukkan nama teman : ")
+    sock_cli.send(bytes("|".join(['add-friend', friend_name, "\n\n\n\n"]), settings.ENCODING))
+
+def client_exit():
+    sock_cli.send(bytes("|".join(['exit', "\n\n\n\n"]), settings.ENCODING))
+    sock_cli.close()
+
+def send_message_command():
     dest = specify_receiver()
     message = input("Masukkan pesan : ")
     message = bytes(message, settings.ENCODING)
 
-    sock_cli.send(bytes("|".join(['message', dest, len(message)]), settings.ENCODING))
+    sock_cli.send(bytes("|".join(['message', dest, str(len(message)), "\n\n\n\n"]), settings.ENCODING))
     sock_cli.send(message)
 
 def get_file_name():
@@ -45,9 +53,6 @@ def send_file():
 
     sock_cli.sendall(data)
     file_handler.close()
-
-def add_friend():
-    pass
 
 def get_message_header(sock_cli):
     message_header = ""
@@ -84,7 +89,7 @@ def recv_message(sock_cli, header_datas):
 
     print("\nReceiving message from {}".format(sender_name))
 
-    while received_size < file_size:
+    while received_size < msg_size:
         data = sock_cli.recv(settings.BATCH_SIZE)
         received_size += len(data)
         message += data.decode(settings.ENCODING)
@@ -100,9 +105,7 @@ def read_msg(sock_cli):
 
         header_datas = message_header.split("|")
 
-        if header_datas[0] == "friend-list":
-            pass
-        elif header_datas[0] == "message":
+        if header_datas[0] == "message":
             # header "message|dest|msg_size|sender_username|\n\n\n\n"
             recv_message(sock_cli, header_datas)
         elif header_datas[0] == "file":
@@ -139,17 +142,20 @@ while True:
         continue
 
     if cmd == 1:
-        check_friend_list()
+        # header "friend-list|dest|msg_size|\n\n\n\n"
+        friend_list()
     elif cmd == 2:
+        # header "add-friend|dest|msg_size|\n\n\n\n"
         add_friend()
     elif cmd == 3:
         # header "message|dest|msg_size|\n\n\n\n"
-        send_message()
+        send_message_command()
     elif cmd == 4:
         # header "file|dest|file_name|file_size|\n\n\n\n"
         send_file()
     elif cmd == 5:
-        sock_cli.close()
+        # header "exit|\n\n\n\n"
+        client_exit()
         break
     else:
         print("Command yang dimasukkan salah")

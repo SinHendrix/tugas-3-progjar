@@ -19,7 +19,10 @@ def receiving_and_sending_another_user(sock_cli, clients, sender_addr_cli, heade
     received_size = 0
 
     if header_datas[1] == "bcast":
-        send_broadcast(clients, header, sender_addr_cli)
+        send_broadcast(clients, header, sender_addr_cli, username_cli)
+    elif not check_if_friend(clients, header_datas, username_cli):
+        message = "User yang dimaksud tidak ditemukan atau bukan merupanan teman"
+        send_message_back(sock_cli, username_cli, message)
     else:
         send_msg(clients[header_datas[1]]['sock_cli'], header)
 
@@ -29,7 +32,7 @@ def receiving_and_sending_another_user(sock_cli, clients, sender_addr_cli, heade
 
         if header_datas[1] == "bcast":
             send_broadcast(clients, data, sender_addr_cli, username_cli)
-        else :
+        elif check_if_friend(clients, header_datas, username_cli) :
             send_msg(clients[header_datas[1]]['sock_cli'], data)
 
 def file_sharing(sock_cli, clients, sender_addr_cli, header_datas, username_cli):
@@ -39,7 +42,7 @@ def file_sharing(sock_cli, clients, sender_addr_cli, header_datas, username_cli)
             "|" + username_cli +
             "|\n\n\n\n", settings.ENCODING)
 
-    receiving_and_sending(sock_cli, clients, sender_addr_cli, header_datas, username_cli, header, data_size)
+    receiving_and_sending_another_user(sock_cli, clients, sender_addr_cli, header_datas, username_cli, header, data_size)
 
 def message_sharing(sock_cli, clients, sender_addr_cli, header_datas, username_cli):
     data_size = int(header_datas[2])
@@ -48,14 +51,50 @@ def message_sharing(sock_cli, clients, sender_addr_cli, header_datas, username_c
             "|" + username_cli +
             "|\n\n\n\n", settings.ENCODING)
 
-    receiving_and_sending(sock_cli, clients, sender_addr_cli, header_datas, username_cli, header, data_size)
-
+    receiving_and_sending_another_user(sock_cli, clients, sender_addr_cli, header_datas, username_cli, header, data_size)
 
 def check_if_friend(clients, header_datas, username_cli):
     if header_datas[1] not in clients[username_cli]['friend_list']:
         return False
     else:
         return True
+
+def send_message_back(sock_cli, username_cli, message):
+    message = bytes(message, settings.ENCODING)
+
+    header = bytes(
+            "|".join(['message', username_cli, str(len(message)), 'server', "\n\n\n\n"])
+            , settings.ENCODING)
+
+    send_msg(sock_cli, header)
+    send_msg(sock_cli, message)
+
+def get_friend_list(sock_cli, clients, sender_addr_cli, header_datas, username_cli):
+    message = ""
+
+    if len(clients[username_cli]['friend_list']) < 1:
+        message = "Daftar teman Anda masih kosong"
+    else :
+        for username in clients[username_cli]['friend_list']:
+            message += "- {}\n".format(username)
+    send_message_back(sock_cli, username_cli, message)
+
+
+def add_friend(sock_cli, clients, sender_addr_cli, header_datas, username_cli):
+    message = ""
+    friend_username = header_datas[1]
+
+    if friend_username not in clients:
+        message = "User tidak ditemukan"
+    elif friend_username in clients[username_cli]['friend_list']:
+        message = "User sudah menjadi teman"
+    elif friend_username == username_cli:
+        message = "Diri sendiri"
+    else :
+        clients[username_cli]['friend_list'].append(friend_username)
+        clients[friend_username]['friend_list'].append(username_cli)
+        message = "Penambahan teman berhasil"
+    send_message_back(sock_cli, username_cli, message)
 
 def read_msg(clients, sock_cli, addr_cli, username_cli):
     while True:
@@ -65,38 +104,26 @@ def read_msg(clients, sock_cli, addr_cli, username_cli):
         if len(message_header) == 0:
             break
 
-        header_datas = message_header.split("|")
+        try:
+            header_datas = message_header.split("|")
 
-        if header_datas[1] != 'bcast' and check_if_friend(clients, header_datas, header_datas[1]):
-            message = bytes("User yang dimaksud tidak ditemukan")
-
-            send_msg(sock_cli, bytes(
-                "|".join([
-                    'message',
-                    username_cli,
-                    len(message),
-                    'server',
-                    "\n\n\n\n"
-                ]) +
-                , settings.ENCODING)
-            )
-            send_msg(sock_cli, message)
-
-        if header_datas[0] == "friend-list":
-            pass
-        if header_datas[0] == "add-friend":
-            pass
-        elif header_datas[0] == "message":
-            message_sharing(sock_cli, clients, addr_cli, header_datas, username_cli)
-        elif header_datas[0] == "file":
-            file_sharing(sock_cli, clients, addr_cli, header_datas, username_cli)
-        else:
-            break
+            if header_datas[0] == "friend-list":
+                get_friend_list(sock_cli, clients, addr_cli, header_datas, username_cli)
+            if header_datas[0] == "add-friend":
+                add_friend(sock_cli, clients, addr_cli, header_datas, username_cli)
+            elif header_datas[0] == "message":
+                message_sharing(sock_cli, clients, addr_cli, header_datas, username_cli)
+            elif header_datas[0] == "file":
+                file_sharing(sock_cli, clients, addr_cli, header_datas, username_cli)
+            elif header_datas[0] == "exit":
+                break
+        except Exception as e:
+            send_message_back(sock_cli, username_cli, str(e))
 
     sock_cli.close()
     print("Connection closed ", addr_cli)
 
-#send to all clients
+#send to all clients friends
 def send_broadcast(clients, data, sender_addr_cli, username_cli):
     for friend in clients[username_cli]['friend_list']:
         if not (sender_addr_cli[0] == clients[friend]['addr_cli'][0] and sender_addr_cli[1] == clients[friend]['addr_cli'][1]):
